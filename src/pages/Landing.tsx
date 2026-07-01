@@ -100,7 +100,7 @@ export default function Landing() {
         </div>
       </div>
 
-      <div className="absolute bottom-4 flex flex-col items-center justify-center gap-4">
+      <div className="flex flex-col items-center justify-center gap-4 p-5">
         <div className="flex gap-4">
           <a 
             href="https://github.com/SkillBcc/PlanningPoker" 
