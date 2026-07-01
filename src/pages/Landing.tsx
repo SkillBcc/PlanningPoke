@@ -103,7 +103,7 @@ export default function Landing() {
       <div className="absolute bottom-4 flex flex-col items-center justify-center gap-4">
         <div className="flex gap-4">
           <a 
-            href="https://github.com/SkillBcc/PlanningPoke" 
+            href="https://github.com/SkillBcc/PlanningPoker" 
             target="_blank" 
             rel="noopener noreferrer"
             className="text-zinc-700 hover:text-zinc-400 transition-colors"
