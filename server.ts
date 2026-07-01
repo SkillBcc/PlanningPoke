@@ -211,6 +211,27 @@ wss.on('connection', (ws) => {
           }
           break;
         }
+        case 'RENAME': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room) {
+            const userIndex = room.users.findIndex(u => u.id === currentUser!.userId);
+            if (userIndex !== -1) {
+              const newName = data.payload.name;
+              room.users[userIndex].name = newName;
+              
+              // Also update the user's name on any existing votes they have made
+              room.tasks.forEach(task => {
+                if (task.votes[currentUser!.userId]) {
+                  task.votes[currentUser!.userId].userName = newName;
+                }
+              });
+              
+              broadcastRoomState(room.id);
+            }
+          }
+          break;
+        }
       }
     } catch (e) {
       console.error('Invalid message', e);

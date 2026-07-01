@@ -23,6 +23,8 @@ export default function Room() {
   const [taskError, setTaskError] = useState<string | null>(null);
   const [hasName, setHasName] = useState(!!wsService.getUserName());
   const [nameInput, setNameInput] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editingNameValue, setEditingNameValue] = useState('');
 
   const currentUserId = wsService.getUserId();
   const currentUser = roomState?.users.find(u => u.id === currentUserId);
@@ -436,28 +438,83 @@ export default function Room() {
               <span>Participants ({roomState.users.length})</span>
               {isParticipantsExpanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
             </button>
-            {isParticipantsExpanded && (
+             {isParticipantsExpanded && (
               <ul className="space-y-4 overflow-y-auto pr-2 custom-scrollbar">
                 {roomState.users.map(user => {
                   const isMe = user.id === currentUserId;
                   
+                  if (isMe && isEditingName) {
+                    return (
+                      <li key={user.id} className="flex items-center justify-between gap-2">
+                        <form 
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (editingNameValue.trim() && editingNameValue.trim() !== user.name) {
+                              wsService.rename(editingNameValue.trim());
+                            }
+                            setIsEditingName(false);
+                          }}
+                          className="flex items-center gap-2 flex-1 min-w-0"
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingNameValue}
+                            onChange={(e) => setEditingNameValue(e.target.value)}
+                            className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-indigo-500 flex-1 min-w-0"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!editingNameValue.trim()}
+                            className="text-emerald-500 hover:text-emerald-400 p-1 shrink-0"
+                            title="Save"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingName(false)}
+                            className="text-zinc-500 hover:text-zinc-400 p-1 shrink-0"
+                            title="Cancel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </form>
+                      </li>
+                    );
+                  }
+
                   return (
-                    <li key={user.id} className="flex items-center justify-between">
-                      <div className={`flex items-center gap-3 ${user.isOnline ? '' : 'opacity-40'}`}>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${getUserColor(user.name)}`}>
+                    <li key={user.id} className="flex items-center justify-between group/user">
+                      <div className={`flex items-center gap-3 ${user.isOnline ? '' : 'opacity-40'} min-w-0 flex-1`}>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getUserColor(user.name)}`}>
                           {getInitials(user.name)}
                         </div>
-                        <span className="text-sm text-zinc-200 truncate max-w-[120px]" title={user.name}>
-                          {user.name} {isMe && '(You)'}
-                        </span>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="text-sm text-zinc-200 truncate max-w-[100px]" title={user.name}>
+                            {user.name} {isMe && '(You)'}
+                          </span>
+                          {isMe && (
+                            <button
+                              onClick={() => {
+                                setEditingNameValue(user.name);
+                                setIsEditingName(true);
+                              }}
+                              className="opacity-0 group-hover/user:opacity-100 hover:text-indigo-400 text-zinc-500 transition-opacity p-0.5"
+                              title="Edit display name"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                         {user.isSpectator && (
-                          <Eye className="w-3 h-3 text-zinc-500" title="Spectator" />
+                          <Eye className="w-3 h-3 text-zinc-500 shrink-0" title="Spectator" />
                         )}
                       </div>
                       {user.isOnline ? (
-                        <div className="w-2 h-2 rounded-full bg-emerald-500" title="Online"></div>
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Online"></div>
                       ) : (
-                        <div className="w-2 h-2 rounded-full bg-red-500" title="Offline"></div>
+                        <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Offline"></div>
                       )}
                     </li>
                   );

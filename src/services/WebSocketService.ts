@@ -173,6 +173,16 @@ class WebSocketService {
       }));
     }
   }
+
+  public rename(name: string) {
+    this.setUserName(name);
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'RENAME',
+        payload: { name }
+      }));
+    }
+  }
 }
 
 export const wsService = new WebSocketService();
