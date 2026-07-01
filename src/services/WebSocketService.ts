@@ -64,8 +64,14 @@ class WebSocketService {
 
   public connect(roomId: string, name: string, initialTask?: string) {
     this.setUserName(name);
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    
+    let wsUrl: string;
+    if (import.meta.env.VITE_WS_BACKEND_URL) {
+      wsUrl = import.meta.env.VITE_WS_BACKEND_URL;
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${window.location.host}`;
+    }
     
     this.ws = new WebSocket(wsUrl);
 
