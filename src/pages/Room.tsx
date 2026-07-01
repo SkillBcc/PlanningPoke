@@ -21,6 +21,8 @@ export default function Room() {
   const [taskToDelete, setTaskToDelete] = useState<{ id: string, title: string } | null>(null);
   const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [hasName, setHasName] = useState(!!wsService.getUserName());
+  const [nameInput, setNameInput] = useState('');
 
   const currentUserId = wsService.getUserId();
   const currentUser = roomState?.users.find(u => u.id === currentUserId);
@@ -56,13 +58,10 @@ export default function Room() {
   }, [roomState?.createdAt]);
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || !hasName) return;
     
     const userName = wsService.getUserName();
-    if (!userName) {
-      navigate('/');
-      return;
-    }
+    if (!userName) return;
 
     const initialTask = location.state?.initialTask;
     wsService.connect(roomId, userName, initialTask);
@@ -80,7 +79,7 @@ export default function Room() {
       connSub.unsubscribe();
       wsService.disconnect();
     };
-  }, [roomId, navigate]);
+  }, [roomId, hasName, navigate]);
 
   const handleCopyLink = () => {
     const url = window.location.href;
@@ -119,6 +118,50 @@ export default function Room() {
       setTaskError(null);
     }
   };
+
+  if (!hasName) {
+    return (
+      <div className="bg-[#0A0A0B] text-zinc-300 min-h-screen flex flex-col items-center justify-center font-sans">
+        <div className="w-full max-w-sm bg-[#0E0E10] border border-zinc-800 p-8 rounded-2xl shadow-2xl">
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <img 
+              src={logoImage} 
+              alt="Planning Poker Logo" 
+              referrerPolicy="no-referrer"
+              className="w-10 h-10 rounded-lg object-cover shadow-lg border border-zinc-700/50"
+            />
+            <h1 className="text-xl font-medium tracking-tight text-white">Join Planning Poker</h1>
+          </div>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (nameInput.trim()) {
+              wsService.setUserName(nameInput.trim());
+              setHasName(true);
+            }
+          }} className="space-y-6">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Your Name</label>
+              <input
+                type="text"
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm"
+                placeholder="Enter your name to join..."
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!nameInput.trim()}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg font-medium transition-colors text-sm"
+            >
+              Enter Room
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (!roomState) {
     return (
