@@ -41,6 +41,7 @@ interface Room {
 }
 
 const rooms = new Map<string, Room>();
+const closedRooms = new Set<string>();
 const ROOM_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Cleanup interval to remove rooms older than 24 hours
@@ -64,6 +65,10 @@ wss.on('connection', (ws) => {
       switch (data.type) {
         case 'JOIN_ROOM': {
           const { roomId, user, initialTask } = data.payload;
+          if (closedRooms.has(roomId)) {
+            ws.send(JSON.stringify({ type: 'ROOM_CLOSED' }));
+            break;
+          }
           if (!rooms.has(roomId)) {
             const task = initialTask ? {
               id: Date.now().toString(),
@@ -254,6 +259,7 @@ wss.on('connection', (ws) => {
           });
         }
         if (!room.users.some(u => u.isOnline)) {
+          closedRooms.add(room.id);
           rooms.delete(room.id);
         } else {
           broadcastRoomState(room.id);

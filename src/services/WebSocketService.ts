@@ -31,6 +31,7 @@ class WebSocketService {
   private roomStateSubject = new BehaviorSubject<RoomState | null>(null);
   public roomState$ = this.roomStateSubject.asObservable();
   public connectionStatus$ = new BehaviorSubject<boolean>(false);
+  public isClosed$ = new BehaviorSubject<boolean>(false);
 
   private userId: string;
   private userName: string = '';
@@ -76,6 +77,7 @@ class WebSocketService {
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
+      this.isClosed$.next(false);
       this.connectionStatus$.next(true);
       this.ws?.send(JSON.stringify({
         type: 'JOIN_ROOM',
@@ -91,6 +93,8 @@ class WebSocketService {
       const data = JSON.parse(event.data);
       if (data.type === 'ROOM_STATE') {
         this.roomStateSubject.next(data.payload);
+      } else if (data.type === 'ROOM_CLOSED') {
+        this.isClosed$.next(true);
       }
     };
 
@@ -106,6 +110,7 @@ class WebSocketService {
       this.ws = null;
     }
     this.roomStateSubject.next(null);
+    this.isClosed$.next(false);
   }
 
   public vote(vote: string | null) {

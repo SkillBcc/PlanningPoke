@@ -12,6 +12,7 @@ export default function Room() {
   const location = useLocation();
   const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [taskInput, setTaskInput] = useState('');
   const [timeLeft, setTimeLeft] = useState<string>('');
@@ -76,9 +77,14 @@ export default function Room() {
       setIsConnected(status);
     });
 
+    const closedSub = wsService.isClosed$.subscribe(closed => {
+      setIsClosed(closed);
+    });
+
     return () => {
       roomSub.unsubscribe();
       connSub.unsubscribe();
+      closedSub.unsubscribe();
       wsService.disconnect();
     };
   }, [roomId, hasName, navigate]);
@@ -120,6 +126,34 @@ export default function Room() {
       setTaskError(null);
     }
   };
+  
+  if (isClosed) {
+    return (
+      <div className="bg-[#0A0A0B] text-zinc-300 min-h-screen flex flex-col items-center justify-center font-sans px-4">
+        <div className="w-full max-w-md bg-[#0E0E10] border border-zinc-800 p-8 rounded-2xl shadow-2xl text-center space-y-6">
+          <div className="mx-auto w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8" />
+          </div>
+          
+          <div className="space-y-2">
+            <h1 className="text-2xl font-medium tracking-tight text-white">Sessão Encerrada</h1>
+            <p className="text-sm text-zinc-400">
+              Esta sala de votação foi encerrada porque todos os participantes saíram ou a sessão expirou.
+            </p>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={() => navigate('/')}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg font-medium transition-colors text-sm shadow-lg shadow-indigo-600/10 cursor-pointer"
+            >
+              Voltar para a Página Inicial
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasName) {
     return (
