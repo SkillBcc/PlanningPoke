@@ -11,10 +11,17 @@ export default function Landing() {
   const [name, setName] = useState(wsService.getUserName() || '');
   const [roomId, setRoomId] = useState('');
   const [initialTask, setInitialTask] = useState('');
+  const [nameError, setNameError] = useState(false);
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !initialTask.trim()) return;
+    if (!name.trim()) {
+      setNameError(true);
+      const nameInput = document.getElementById('userNameInput');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (!initialTask.trim()) return;
     wsService.setUserName(name);
     const newRoomId = uuidv4().substring(0, 8);
     navigate(`/room/${newRoomId}`, { state: { initialTask: initialTask.trim() } });
@@ -22,7 +29,13 @@ export default function Landing() {
 
   const handleJoinRoom = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !roomId.trim()) return;
+    if (!name.trim()) {
+      setNameError(true);
+      const nameInput = document.getElementById('userNameInput');
+      if (nameInput) nameInput.focus();
+      return;
+    }
+    if (!roomId.trim()) return;
     wsService.setUserName(name);
     navigate(`/room/${roomId}`);
   };
@@ -44,12 +57,27 @@ export default function Landing() {
           <div>
             <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Your Name</label>
             <input
+              id="userNameInput"
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError && e.target.value.trim()) {
+                  setNameError(false);
+                }
+              }}
+              className={`w-full bg-zinc-900 border rounded-lg px-4 py-3 text-white focus:outline-none transition-all ${
+                nameError 
+                  ? 'border-red-500/70 focus:border-red-500 focus:ring-1 focus:ring-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.1)]' 
+                  : 'border-zinc-800 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'
+              }`}
               placeholder="Enter your name"
             />
+            {nameError && (
+              <span className="text-xs text-red-400 mt-1.5 block animate-pulse">
+                Por favor, insira o seu nome para continuar
+              </span>
+            )}
           </div>
 
           <form onSubmit={handleCreateRoom} className="space-y-4 pt-4 border-t border-zinc-800">
@@ -65,8 +93,8 @@ export default function Landing() {
             </div>
             <button
               type="submit"
-              disabled={!name.trim() || !initialTask.trim()}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg font-medium transition-colors"
+              disabled={!initialTask.trim()}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg font-medium transition-colors cursor-pointer"
             >
               Create New Room
             </button>
@@ -91,8 +119,8 @@ export default function Landing() {
             </div>
             <button
               type="submit"
-              disabled={!name.trim() || !roomId.trim()}
-              className="w-full bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg font-medium transition-colors"
+              disabled={!roomId.trim()}
+              className="w-full bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-3 rounded-lg font-medium transition-colors cursor-pointer"
             >
               Join Room
             </button>
