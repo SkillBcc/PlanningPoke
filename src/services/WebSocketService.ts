@@ -15,6 +15,7 @@ export interface TaskState {
   title: string;
   votes: Record<string, { userName: string; vote: string }>;
   isRevealed: boolean;
+  finalEstimate?: string;
 }
 
 export interface RoomState {
@@ -24,6 +25,10 @@ export interface RoomState {
   tasks: TaskState[];
   createdAt: number;
   users: UserState[];
+  timerSeconds: number;
+  timerIsRunning: boolean;
+  timerDuration: number;
+  autoReveal: boolean;
 }
 
 class WebSocketService {
@@ -161,6 +166,15 @@ class WebSocketService {
     }
   }
 
+  public setFinalEstimate(taskId: string, finalEstimate: string) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'SET_FINAL_ESTIMATE',
+        payload: { taskId, finalEstimate }
+      }));
+    }
+  }
+
   public deleteTask(taskId: string) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({
@@ -185,6 +199,42 @@ class WebSocketService {
       this.ws.send(JSON.stringify({
         type: 'RENAME',
         payload: { name }
+      }));
+    }
+  }
+
+  public startTimer() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'START_TIMER' }));
+    }
+  }
+
+  public pauseTimer() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'PAUSE_TIMER' }));
+    }
+  }
+
+  public resetTimer() {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'RESET_TIMER' }));
+    }
+  }
+
+  public setTimerDuration(duration: number) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'SET_TIMER_DURATION',
+        payload: { duration }
+      }));
+    }
+  }
+
+  public setAutoReveal(autoReveal: boolean) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'SET_AUTO_REVEAL',
+        payload: { autoReveal }
       }));
     }
   }

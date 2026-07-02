@@ -29,6 +29,7 @@ interface RoomTask {
   title: string;
   votes: Record<string, VoteInfo>;
   isRevealed: boolean;
+  finalEstimate?: string;
 }
 
 interface Room {
@@ -38,6 +39,10 @@ interface Room {
   tasks: RoomTask[];
   activeTaskId: string | null;
   createdAt: number;
+  timerSeconds: number;
+  timerIsRunning: boolean;
+  timerDuration: number;
+  autoReveal: boolean;
 }
 
 const rooms = new Map<string, Room>();
@@ -49,11 +54,37 @@ setInterval(() => {
   const now = Date.now();
   for (const [roomId, room] of rooms.entries()) {
     if (now - room.createdAt > ROOM_LIFETIME_MS) {
-      room.users.forEach(u => u.ws.close(1000, 'Room expired after 24 hours'));
+      room.users.forEach(u => u.ws?.close(1000, 'Room expired after 24 hours'));
       rooms.delete(roomId);
     }
   }
 }, 60 * 60 * 1000); // Check every hour
+
+// Timer tick interval
+setInterval(() => {
+  for (const [roomId, room] of rooms.entries()) {
+    if (room.timerIsRunning) {
+      if (room.timerSeconds > 0) {
+        room.timerSeconds -= 1;
+        if (room.timerSeconds === 0) {
+          room.timerIsRunning = false;
+          if (room.autoReveal && room.activeTaskId) {
+            const task = room.tasks.find(t => t.id === room.activeTaskId);
+            if (task) {
+              task.isRevealed = true;
+            }
+          }
+          room.timerSeconds = room.timerDuration;
+        }
+        broadcastRoomState(roomId);
+      } else {
+        room.timerIsRunning = false;
+        room.timerSeconds = room.timerDuration;
+        broadcastRoomState(roomId);
+      }
+    }
+  }
+}, 1000);
 
 wss.on('connection', (ws) => {
   let currentUser: { roomId: string; userId: string } | null = null;
@@ -82,7 +113,11 @@ wss.on('connection', (ws) => {
               users: [], 
               tasks: task ? [task] : [], 
               activeTaskId: task ? task.id : null, 
-              createdAt: Date.now() 
+              createdAt: Date.now(),
+              timerSeconds: 120,
+              timerIsRunning: false,
+              timerDuration: 120,
+              autoReveal: false
             });
           }
           const room = rooms.get(roomId)!;
@@ -102,6 +137,7 @@ wss.on('connection', (ws) => {
           if (!currentUser) return;
           const room = rooms.get(currentUser.roomId);
           if (room && room.activeTaskId) {
+            if (room.timerSeconds <= 0) return; // Block voting if timer reached the end
             const task = room.tasks.find(t => t.id === room.activeTaskId);
             if (task && !task.isRevealed) {
               const user = room.users.find(u => u.id === currentUser!.userId);
@@ -124,6 +160,8 @@ wss.on('connection', (ws) => {
             const task = room.tasks.find(t => t.id === room.activeTaskId);
             if (task) {
               task.isRevealed = true;
+              room.timerIsRunning = false;
+              room.timerSeconds = room.timerDuration;
               broadcastRoomState(room.id);
             }
           }
@@ -137,6 +175,8 @@ wss.on('connection', (ws) => {
             if (task) {
               task.isRevealed = false;
               task.votes = {};
+              room.timerIsRunning = false;
+              room.timerSeconds = room.timerDuration;
               broadcastRoomState(room.id);
             }
           }
@@ -165,6 +205,56 @@ wss.on('connection', (ws) => {
           const room = rooms.get(currentUser.roomId);
           if (room && room.ownerId === currentUser.userId) {
             room.activeTaskId = data.payload.taskId;
+            room.timerIsRunning = false;
+            room.timerSeconds = room.timerDuration;
+            broadcastRoomState(room.id);
+          }
+          break;
+        }
+        case 'START_TIMER': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            room.timerIsRunning = true;
+            broadcastRoomState(room.id);
+          }
+          break;
+        }
+        case 'PAUSE_TIMER': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            room.timerIsRunning = false;
+            broadcastRoomState(room.id);
+          }
+          break;
+        }
+        case 'RESET_TIMER': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            room.timerIsRunning = false;
+            room.timerSeconds = room.timerDuration;
+            broadcastRoomState(room.id);
+          }
+          break;
+        }
+        case 'SET_TIMER_DURATION': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            room.timerDuration = data.payload.duration;
+            room.timerSeconds = data.payload.duration;
+            room.timerIsRunning = false;
+            broadcastRoomState(room.id);
+          }
+          break;
+        }
+        case 'SET_AUTO_REVEAL': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            room.autoReveal = data.payload.autoReveal;
             broadcastRoomState(room.id);
           }
           break;
@@ -176,6 +266,18 @@ wss.on('connection', (ws) => {
             const task = room.tasks.find(t => t.id === data.payload.taskId);
             if (task) {
               task.title = data.payload.title;
+              broadcastRoomState(room.id);
+            }
+          }
+          break;
+        }
+        case 'SET_FINAL_ESTIMATE': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            const task = room.tasks.find(t => t.id === data.payload.taskId);
+            if (task) {
+              task.finalEstimate = data.payload.finalEstimate;
               broadcastRoomState(room.id);
             }
           }
@@ -200,7 +302,7 @@ wss.on('connection', (ws) => {
         case 'TOGGLE_SPECTATOR': {
           if (!currentUser) return;
           const room = rooms.get(currentUser.roomId);
-          if (room && room.ownerId === currentUser.userId) {
+          if (room) {
             const userIndex = room.users.findIndex(u => u.id === currentUser!.userId);
             if (userIndex !== -1) {
               room.users[userIndex].isSpectator = data.payload.isSpectator;
@@ -282,6 +384,10 @@ function broadcastRoomState(roomId: string) {
     activeTaskId: room.activeTaskId,
     tasks: room.tasks,
     createdAt: room.createdAt,
+    timerSeconds: room.timerSeconds,
+    timerIsRunning: room.timerIsRunning,
+    timerDuration: room.timerDuration,
+    autoReveal: room.autoReveal,
     // Provide a snapshot of users with their voting status for the active task
     users: room.users.map(u => {
       const voteInfo = activeTask ? activeTask.votes[u.id] : null;

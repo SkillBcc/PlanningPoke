@@ -1,10 +1,74 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { wsService, RoomState } from '../services/WebSocketService';
-import { Copy, LogOut, Trash2, Plus, Edit2, Check, CheckCircle2, ChevronDown, ChevronRight, Eye, EyeOff, AlertTriangle, X } from 'lucide-react';
+import { Copy, LogOut, Trash2, Plus, Edit2, Check, CheckCircle2, ChevronDown, ChevronRight, Eye, EyeOff, AlertTriangle, X, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import logoImage from '../assets/images/planning_poker_white_p_logo_1782837649464.jpg';
 
 const DECK = ['0', '1', '2', '3', '5', '8', '13', '?'];
+
+const PALETTE = [
+  '#818cf8', // Matte Indigo
+  '#34d399', // Matte Emerald
+  '#c084fc', // Matte Purple
+  '#fbbf24', // Matte Amber
+  '#60a5fa', // Matte Blue
+  '#fb7185', // Matte Rose
+  '#22d3ee', // Matte Cyan
+  '#a1a1aa'  // Matte Zinc
+];
+
+const DonutChart = ({ voteCounts }: { voteCounts: Record<string, number> }) => {
+  const sortedVotes = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
+  const total = sortedVotes.reduce((sum, [_, count]) => sum + count, 0);
+
+  if (total === 0) {
+    return (
+      <div className="w-20 h-20 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center text-[10px] text-zinc-500 font-medium">
+        Empty
+      </div>
+    );
+  }
+
+  const circumference = 2 * Math.PI * 30; // ~188.496
+  let accumulatedPercent = 0;
+
+  return (
+    <div className="relative w-20 h-20 flex items-center justify-center group">
+      <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
+        {sortedVotes.map(([val, count], index) => {
+          const percent = count / total;
+          const strokeLength = percent * circumference;
+          const strokeOffset = -accumulatedPercent * circumference;
+          accumulatedPercent += percent;
+
+          const color = PALETTE[index % PALETTE.length];
+
+          return (
+            <circle
+              key={val}
+              cx="50"
+              cy="50"
+              r="30"
+              fill="none"
+              stroke={color}
+              strokeWidth="10"
+              strokeDasharray={`${strokeLength} ${circumference}`}
+              strokeDashoffset={strokeOffset}
+              className="transition-all duration-300 hover:stroke-[12] cursor-pointer"
+            >
+              <title>{`${val}: ${count} ${count === 1 ? 'vote' : 'votes'} (${Math.round(percent * 100)}%)`}</title>
+            </circle>
+          );
+        })}
+      </svg>
+      {/* Center Label */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+        <span className="text-[10px] font-extrabold text-white leading-none">{total}</span>
+        <span className="text-[7px] text-zinc-500 uppercase tracking-widest mt-0.5">{total === 1 ? 'vote' : 'votes'}</span>
+      </div>
+    </div>
+  );
+};
 
 export default function Room() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -27,11 +91,20 @@ export default function Room() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingNameValue, setEditingNameValue] = useState('');
 
+  // Features 1, 2, 3, 5 state variables
+  const [selectedFinalEstimate, setSelectedFinalEstimate] = useState<string | null>(null);
+
   const currentUserId = wsService.getUserId();
   const currentUser = roomState?.users.find(u => u.id === currentUserId);
   const activeTask = roomState?.tasks?.find(t => t.id === roomState.activeTaskId);
   const isRevealed = activeTask?.isRevealed ?? false;
   const isOwner = roomState?.ownerId === currentUserId;
+
+  const autoReveal = roomState?.autoReveal ?? false;
+
+  const timerSeconds = roomState?.timerSeconds ?? 120;
+  const timerIsRunning = roomState?.timerIsRunning ?? false;
+  const timerDuration = roomState?.timerDuration ?? 120;
 
   useEffect(() => {
     if (!roomState?.createdAt) return;
@@ -89,6 +162,65 @@ export default function Room() {
     };
   }, [roomId, hasName, navigate]);
 
+  const onlineVotingUsersForReveal = roomState?.users.filter(u => u.isOnline && !u.isSpectator) || [];
+  const allVoted = onlineVotingUsersForReveal.length > 0 && onlineVotingUsersForReveal.every(u => u.hasVoted);
+
+  // Synchronize owner's localStorage auto-reveal with the server once connected
+  useEffect(() => {
+    if (isOwner && roomState) {
+      const localAutoReveal = localStorage.getItem(`auto_reveal_${roomId}`) === 'true';
+      if (roomState.autoReveal !== localAutoReveal) {
+        wsService.setAutoReveal(localAutoReveal);
+      }
+    }
+  }, [isOwner, roomState?.id, roomState?.autoReveal, roomId]);
+
+  // 5. Auto-Reveal Effect (Owner only)
+  useEffect(() => {
+    if (autoReveal && isOwner && allVoted && !isRevealed && roomState?.activeTaskId) {
+      wsService.reveal();
+    }
+  }, [allVoted, isRevealed, isOwner, autoReveal, roomState?.activeTaskId]);
+
+  // 3. Smart Pre-fill Final Estimate
+  useEffect(() => {
+    if (activeTask && roomState) {
+      if (activeTask.finalEstimate) {
+        setSelectedFinalEstimate(activeTask.finalEstimate);
+      } else if (isRevealed) {
+        const activeVotes = roomState.users
+          .filter(u => (u.isOnline || u.hasVoted) && !u.isSpectator)
+          .map(u => u.vote)
+          .filter((v): v is string => v !== null && v !== undefined);
+
+        const numericVotes = activeVotes.map(v => Number(v)).filter(v => !isNaN(v));
+        if (numericVotes.length > 0) {
+          const sum = numericVotes.reduce((a, b) => a + b, 0);
+          const avg = sum / numericVotes.length;
+          let closest = DECK[0];
+          let minDiff = Infinity;
+          DECK.forEach(card => {
+            const num = Number(card);
+            if (!isNaN(num)) {
+              const diff = Math.abs(num - avg);
+              if (diff < minDiff) {
+                minDiff = diff;
+                closest = card;
+              }
+            }
+          });
+          setSelectedFinalEstimate(closest);
+        } else {
+          setSelectedFinalEstimate('?');
+        }
+      } else {
+        setSelectedFinalEstimate(null);
+      }
+    } else {
+      setSelectedFinalEstimate(null);
+    }
+  }, [roomState?.activeTaskId, isRevealed, activeTask?.finalEstimate, roomState]);
+
   const handleCopyLink = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url);
@@ -97,11 +229,13 @@ export default function Room() {
   };
 
   const handleVote = (vote: string) => {
+    if (timerSeconds <= 0) return;
     wsService.vote(currentUser?.vote === vote ? null : vote);
   };
 
   const handleReveal = () => {
     if (isRevealed) {
+      if (activeTask?.finalEstimate) return;
       wsService.reset();
     } else {
       wsService.reveal();
@@ -223,11 +357,48 @@ export default function Room() {
 
   const onlineUsers = roomState.users.filter(u => u.isOnline);
   const onlineVotingUsers = roomState.users.filter(u => u.isOnline && !u.isSpectator);
-  const allVoted = onlineVotingUsers.length > 0 && onlineVotingUsers.every(u => u.hasVoted);
 
   const isSpectatorDisabled = Boolean(roomState?.tasks.some(task => 
     task.isRevealed && task.votes[currentUserId]
   ));
+
+  // Helper to format seconds into mm:ss
+  const formatTimer = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // 1. Vote Stats & Consensus calculations
+  const activeVotes = roomState.users
+    .filter(u => (u.isOnline || u.hasVoted) && !u.isSpectator)
+    .map(u => u.vote)
+    .filter((v): v is string => v !== null && v !== undefined);
+
+  const voteCounts: Record<string, number> = {};
+  activeVotes.forEach(v => {
+    voteCounts[v] = (voteCounts[v] || 0) + 1;
+  });
+
+  const totalVoters = activeVotes.length;
+  
+  let agreementPercentage = 0;
+  let consensusValue = '';
+  if (totalVoters > 0) {
+    let maxCount = 0;
+    Object.entries(voteCounts).forEach(([val, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        consensusValue = val;
+      }
+    });
+    agreementPercentage = Math.round((maxCount / totalVoters) * 100);
+  }
+
+  const handleToggleAutoReveal = (val: boolean) => {
+    localStorage.setItem(`auto_reveal_${roomId}`, String(val));
+    wsService.setAutoReveal(val);
+  };
 
   return (
     <div className="bg-[#0A0A0B] text-zinc-300 h-screen w-full flex flex-col font-sans overflow-hidden">
@@ -290,18 +461,102 @@ export default function Room() {
               />
             </button>
           </div>
+
+          {/* Auto-Reveal Switch (Owner Only) */}
+          {isOwner && (
+            <div className="flex items-center gap-2.5 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md">
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider select-none">
+                Auto-Reveal
+              </span>
+              <button
+                role="switch"
+                aria-checked={autoReveal}
+                onClick={() => handleToggleAutoReveal(!autoReveal)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  autoReveal ? 'bg-indigo-600' : 'bg-zinc-700'
+                }`}
+                title="Automatically reveal cards when everyone has voted"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    autoReveal ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+
+          {/* Discussion Timer Widget */}
+          <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md">
+            <Timer className={`w-4 h-4 transition-all duration-300 ${timerIsRunning ? 'text-indigo-400 animate-pulse' : 'text-zinc-500/50'}`} />
+            <span className={`text-sm font-mono font-bold select-none transition-all duration-300 ${
+              timerIsRunning 
+                ? (timerSeconds <= 10 && timerSeconds > 0 ? 'text-red-400 animate-bounce' : 'text-white') 
+                : 'text-white/40'
+            }`}>
+              {formatTimer(timerSeconds)}
+            </span>
+            {isOwner && (
+              <>
+                <div className="flex items-center gap-1 border-l border-zinc-800 pl-2">
+                  <button
+                    onClick={() => {
+                      if (timerIsRunning) {
+                        wsService.pauseTimer();
+                      } else {
+                        wsService.startTimer();
+                      }
+                    }}
+                    className="text-zinc-500 hover:text-white transition-colors p-0.5 cursor-pointer"
+                    title={timerIsRunning ? "Pause Timer" : "Start Timer"}
+                  >
+                    {timerIsRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      wsService.resetTimer();
+                    }}
+                    className="text-zinc-500 hover:text-white transition-colors p-0.5 cursor-pointer"
+                    title="Reset Timer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1 border-l border-zinc-800 pl-2">
+                  {[60, 120, 180].map(secs => (
+                    <button
+                      key={secs}
+                      onClick={() => {
+                        wsService.setTimerDuration(secs);
+                      }}
+                      className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
+                        timerDuration === secs 
+                          ? 'bg-indigo-500/20 text-indigo-400' 
+                          : 'text-zinc-600 hover:text-zinc-400'
+                      }`}
+                      title={`Set to ${secs / 60} min`}
+                    >
+                      {secs / 60}m
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           {isOwner && (
             <button 
               onClick={handleReveal}
-              disabled={!roomState.activeTaskId}
+              disabled={!roomState.activeTaskId || (isRevealed && Boolean(activeTask?.finalEstimate))}
               className={`px-5 py-2 rounded-md font-medium transition-all duration-300 relative ${
                 !roomState.activeTaskId
                   ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                   : isRevealed 
-                    ? 'bg-zinc-800 hover:bg-zinc-700 text-white' 
+                    ? (activeTask?.finalEstimate 
+                        ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed font-semibold' 
+                        : 'bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer') 
                     : allVoted
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] scale-105'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.4)] scale-105 cursor-pointer'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
               }`}
             >
               {allVoted && !isRevealed && roomState.activeTaskId && (
@@ -419,6 +674,14 @@ export default function Room() {
                             </div>
                           )}
                         </div>
+                        {task.finalEstimate && (
+                          <div 
+                            className="mr-2 shrink-0 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-xs font-mono font-bold"
+                            title={`Final Estimate: ${task.finalEstimate}`}
+                          >
+                            {task.finalEstimate}
+                          </div>
+                        )}
                         {isOwner && !isEditing && (
                           <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                             <button 
@@ -615,27 +878,172 @@ export default function Room() {
               <span className="text-sm font-semibold text-zinc-500 tracking-widest">ADD A TASK TO START VOTING</span>
             </div>
           ) : isRevealed ? (
-            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#121214] border border-indigo-500/30 px-12 py-6 rounded-2xl shadow-2xl z-10 flex flex-col items-center gap-2">
-              <span className="text-xs font-semibold text-indigo-400/80 uppercase tracking-widest">Average Estimate</span>
-              <span className="text-4xl font-bold text-white">
-                {(() => {
-                  const votes = roomState.users
-                    .filter(u => (u.isOnline || (isRevealed && u.hasVoted)) && !u.isSpectator)
-                    .map(u => u.vote)
-                    .filter(v => v !== null && v !== '?' && v !== undefined)
-                    .map(v => Number(v))
-                    .filter(v => !isNaN(v));
-                  if (votes.length === 0) return '-';
-                  const sum = votes.reduce((a, b) => a + b, 0);
-                  return (sum / votes.length).toFixed(1).replace(/\.0$/, '');
-                })()}
-              </span>
-            </div>
+            isOwner ? (
+              <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#0E0E10] border border-zinc-800/80 p-6 rounded-2xl shadow-2xl z-10 flex flex-col md:flex-row items-stretch justify-between gap-6 w-full max-w-3xl border-indigo-500/10 divide-y md:divide-y-0 md:divide-x divide-zinc-800/60">
+                {/* Column 1: Average */}
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-2">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Vote Average</span>
+                  <div className="text-3xl font-extrabold text-white bg-zinc-900/50 border border-zinc-800 w-16 h-16 rounded-xl flex items-center justify-center shadow-inner">
+                    {(() => {
+                      const numericVotes = activeVotes.map(v => Number(v)).filter(v => !isNaN(v));
+                      if (numericVotes.length === 0) return '-';
+                      const sum = numericVotes.reduce((a, b) => a + b, 0);
+                      return (sum / numericVotes.length).toFixed(1).replace(/\.0$/, '');
+                    })()}
+                  </div>
+                </div>
+
+                {/* Column 2: Distribution */}
+                <div className="flex-[2.5] flex flex-col items-center justify-center px-6 py-2">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Distribution</span>
+                  <div className="flex items-center justify-center gap-5 w-full">
+                    {/* Donut Chart Visual */}
+                    <div className="shrink-0">
+                      <DonutChart voteCounts={voteCounts} />
+                    </div>
+
+                    {/* Compact Color-Coded Legend Grid */}
+                    <div className="flex flex-wrap gap-2 max-w-[240px] justify-start content-center">
+                      {Object.entries(voteCounts).sort((a, b) => b[1] - a[1]).map(([val, count], index) => {
+                        const color = PALETTE[index % PALETTE.length];
+                        return (
+                          <div 
+                            key={val} 
+                            className="flex items-center bg-zinc-950 border border-zinc-900 rounded-lg pl-2 pr-2.5 py-1 gap-2 shadow-sm"
+                          >
+                            <span 
+                              className="w-2 h-2 rounded-full shrink-0" 
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="font-extrabold text-xs text-white font-mono leading-none">{val}</span>
+                            <span className="text-zinc-700 text-[10px] select-none leading-none">•</span>
+                            <span className="text-zinc-400 text-[10px] font-semibold leading-none">
+                              {count}x
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {totalVoters === 0 && (
+                        <span className="text-xs text-zinc-500 italic">No votes</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 3: Consensus */}
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-2">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Consensus</span>
+                  <span className={`text-xl font-extrabold ${agreementPercentage === 100 ? 'text-emerald-400' : agreementPercentage >= 50 ? 'text-indigo-400' : 'text-zinc-300'}`}>
+                    {agreementPercentage}%
+                  </span>
+                  
+                  {/* Visual Progress Bar */}
+                  <div className="w-24 h-1.5 bg-zinc-900 border border-zinc-800/60 rounded-full mt-2 overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        agreementPercentage === 100 ? 'bg-emerald-500' : 'bg-indigo-500'
+                      }`} 
+                      style={{ width: `${agreementPercentage}%` }}
+                    />
+                  </div>
+                  
+                  {agreementPercentage < 100 && agreementPercentage > 0 && (
+                    <span className="text-[9px] text-zinc-500 mt-1.5 font-medium truncate max-w-[120px]">
+                      Most voted: <span className="font-bold text-zinc-400">{consensusValue}</span>
+                    </span>
+                  )}
+                  {agreementPercentage === 100 && (
+                    <span className="text-[9px] text-emerald-500/80 mt-1.5 font-bold animate-pulse">
+                      🎉 Consensus!
+                    </span>
+                  )}
+                </div>
+
+                {/* Column 4: Final Estimate Selection */}
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-2 shrink-0">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Final Estimate</span>
+                  {activeTask?.finalEstimate ? (
+                    <div className="flex items-center justify-center bg-emerald-500/10 border border-emerald-500/25 w-14 h-14 rounded-xl shadow-lg shadow-emerald-500/5">
+                      <span className="text-2xl font-extrabold text-emerald-400 font-mono">{activeTask.finalEstimate}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 bg-zinc-900/50 border border-zinc-800 p-1.5 rounded-xl">
+                      <select
+                        value={selectedFinalEstimate || ''}
+                        onChange={(e) => setSelectedFinalEstimate(e.target.value)}
+                        className="bg-zinc-950 border border-zinc-800 text-white text-xs font-bold rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="" disabled>Select...</option>
+                        {DECK.map(v => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          if (selectedFinalEstimate && roomState.activeTaskId) {
+                            wsService.setFinalEstimate(roomState.activeTaskId, selectedFinalEstimate);
+                          }
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer shadow-md shadow-emerald-600/10 hover:shadow-emerald-500/20 active:scale-95"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+                  {activeTask?.finalEstimate && (
+                    <span className="text-[9px] text-emerald-400 font-medium mt-1.5">
+                      Saved & Locked
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Non-Creator View: Only Average or Final Estimate (if saved) */
+              <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#0E0E10] border border-zinc-800 p-6 rounded-2xl shadow-2xl z-10 flex flex-col items-center justify-center gap-2.5 min-w-[220px] border-indigo-500/10">
+                {activeTask?.finalEstimate ? (
+                  <>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Final Estimate</span>
+                    <div className="flex items-center justify-center bg-emerald-500/10 border-2 border-emerald-500/30 w-16 h-20 rounded-xl shadow-lg shadow-emerald-500/5 mt-0.5">
+                      <span className="text-3xl font-extrabold text-emerald-400 font-mono">{activeTask.finalEstimate}</span>
+                    </div>
+                    <span className="text-[9px] text-zinc-500">Set by room owner</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Vote Average</span>
+                    <div className="flex items-center justify-center bg-zinc-900 border-2 border-zinc-800/80 w-16 h-20 rounded-xl shadow-lg mt-0.5">
+                      <span className="text-3xl font-extrabold text-white font-mono">
+                        {(() => {
+                          const numericVotes = activeVotes.map(v => Number(v)).filter(v => !isNaN(v));
+                          if (numericVotes.length === 0) return '-';
+                          const sum = numericVotes.reduce((a, b) => a + b, 0);
+                          return (sum / numericVotes.length).toFixed(1).replace(/\.0$/, '');
+                        })()}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-zinc-500">Awaiting final estimate</span>
+                  </>
+                )}
+              </div>
+            )
           ) : currentUser?.isSpectator ? (
             <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#121214] border border-zinc-800 px-8 py-6 rounded-2xl shadow-2xl z-10 w-max max-w-[90vw] overflow-x-auto text-center">
               <span className="text-sm font-semibold text-zinc-500 tracking-widest flex items-center gap-2">
                 <Eye className="w-4 h-4" /> SPECTATOR MODE
               </span>
+            </div>
+          ) : timerSeconds === 0 ? (
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#121214] border border-red-500/30 px-12 py-6 rounded-2xl shadow-2xl z-10 flex flex-col items-center gap-4 text-center">
+              <span className="text-xs font-semibold text-red-400 uppercase tracking-widest flex items-center gap-2">
+                ⚠️ Time's Up!
+              </span>
+              <span className="text-sm text-zinc-400">Voting has ended. Waiting for host to reveal cards...</span>
+              {currentUser?.hasVoted && (
+                <div className="flex flex-col items-center gap-1 mt-2">
+                  <span className="text-xs text-zinc-500">Your final vote was:</span>
+                  <span className="text-xl font-bold text-white">{currentUser.vote}</span>
+                </div>
+              )}
             </div>
           ) : currentUser?.hasVoted ? (
               <div className="absolute bottom-12 left-1/2 -translate-x-1/2 bg-[#121214] border border-emerald-500/30 px-12 py-6 rounded-2xl shadow-2xl z-10 flex flex-col items-center gap-4">
