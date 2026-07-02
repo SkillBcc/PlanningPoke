@@ -132,7 +132,7 @@ export default function Room() {
               referrerPolicy="no-referrer"
               className="w-10 h-10 rounded-lg object-cover shadow-lg border border-zinc-700/50"
             />
-            <h1 className="text-xl font-medium tracking-tight text-white">Join Planning Poker</h1>
+            <h1 className="text-xl font-medium tracking-tight text-white">Join planpoker.tech</h1>
           </div>
           <form onSubmit={(e) => {
             e.preventDefault();
@@ -191,7 +191,7 @@ export default function Room() {
   const onlineVotingUsers = roomState.users.filter(u => u.isOnline && !u.isSpectator);
   const allVoted = onlineVotingUsers.length > 0 && onlineVotingUsers.every(u => u.hasVoted);
 
-  const isSpectatorDisabled = isOwner && Boolean(roomState?.tasks.some(task => 
+  const isSpectatorDisabled = Boolean(roomState?.tasks.some(task => 
     task.isRevealed && task.votes[currentUserId]
   ));
 
@@ -207,7 +207,7 @@ export default function Room() {
             className="w-10 h-10 rounded-lg object-cover shadow-lg border border-zinc-700/50"
           />
           <h1 className="text-xl font-medium tracking-tight text-white">
-            Planning Poker <span className="text-zinc-500 font-normal">/ Session #{roomId}</span>
+            planpoker.tech <span className="text-zinc-500 font-normal">/ Session #{roomId}</span>
           </h1>
         </div>
         <div className="flex items-center gap-4">
@@ -228,23 +228,34 @@ export default function Room() {
               <Copy className="w-4 h-4 text-zinc-500 hover:text-white shrink-0" />
             )}
           </div>
-          {isOwner && (
+          <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md">
             <button
-              onClick={() => wsService.toggleSpectator(!currentUser?.isSpectator)}
               disabled={isSpectatorDisabled}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors border ${
-                isSpectatorDisabled
-                  ? 'bg-zinc-900 border-zinc-800 text-zinc-600 cursor-not-allowed'
-                  : currentUser?.isSpectator 
-                    ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20' 
-                    : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
-              }`}
-              title={currentUser?.isSpectator ? "Switch to Voter Mode" : "Switch to Spectator Mode"}
+              onClick={() => wsService.toggleSpectator(!currentUser?.isSpectator)}
+              className={`text-xs font-semibold uppercase tracking-wider select-none transition-colors focus:outline-none ${
+                isSpectatorDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+              } ${currentUser?.isSpectator ? 'text-indigo-400' : 'text-zinc-500'}`}
+              title={isSpectatorDisabled ? "Cannot switch during active reveal" : currentUser?.isSpectator ? "Switch to Voter Mode" : "Switch to Spectator Mode"}
             >
-              {currentUser?.isSpectator ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-              <span className="hidden sm:inline">{currentUser?.isSpectator ? 'Spectator' : 'Voter'}</span>
+              Spectator Mode
             </button>
-          )}
+            <button
+              role="switch"
+              aria-checked={currentUser?.isSpectator}
+              disabled={isSpectatorDisabled}
+              onClick={() => wsService.toggleSpectator(!currentUser?.isSpectator)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                isSpectatorDisabled ? 'opacity-40 cursor-not-allowed' : ''
+              } ${currentUser?.isSpectator ? 'bg-indigo-600' : 'bg-zinc-700'}`}
+              title={isSpectatorDisabled ? "Cannot switch during active reveal" : currentUser?.isSpectator ? "Switch to Voter Mode" : "Switch to Spectator Mode"}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  currentUser?.isSpectator ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
           {isOwner && (
             <button 
               onClick={handleReveal}

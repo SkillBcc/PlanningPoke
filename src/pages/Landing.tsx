@@ -37,7 +37,7 @@ export default function Landing() {
             referrerPolicy="no-referrer"
             className="w-12 h-12 rounded-xl object-cover shadow-lg border border-zinc-700/50"
           />
-          <h1 className="text-2xl font-medium tracking-tight text-white">Planning Poker</h1>
+          <h1 className="text-2xl font-medium tracking-tight text-white">planpoker.tech</h1>
         </div>
 
         <div className="space-y-6">

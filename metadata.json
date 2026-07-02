@@ -1,5 +1,5 @@
 {
-  "name": "Planning Poker",
+  "name": "planpoker.tech",
   "description": "Real-time planning poker for agile estimations with WebSockets and RxJS.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
