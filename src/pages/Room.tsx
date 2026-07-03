@@ -1,78 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { wsService, RoomState } from '../services/WebSocketService';
+import { wsService, RoomState } from '../core/services/WebSocketService';
 import { Copy, LogOut, Trash2, Plus, Edit2, Check, CheckCircle2, ChevronDown, ChevronRight, Eye, EyeOff, AlertTriangle, X, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import logoImage from '../assets/images/planning_poker_white_p_logo_1782837649464.jpg';
 
-const DECKS: Record<string, string[]> = {
-  simplified: ['0', '1', '2', '3', '5', '8', '13', '?'],
-  standard: ['0', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89', '144', '?'],
-  modified: ['0', '1/2', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?']
-};
+import { DECKS } from '../features/room/constants';
 
-const PALETTE = [
-  '#818cf8', // Matte Indigo
-  '#34d399', // Matte Emerald
-  '#c084fc', // Matte Purple
-  '#fbbf24', // Matte Amber
-  '#60a5fa', // Matte Blue
-  '#fb7185', // Matte Rose
-  '#22d3ee', // Matte Cyan
-  '#a1a1aa'  // Matte Zinc
-];
-
-const DonutChart = ({ voteCounts }: { voteCounts: Record<string, number> }) => {
-  const sortedVotes = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
-  const total = sortedVotes.reduce((sum, [_, count]) => sum + count, 0);
-
-  if (total === 0) {
-    return (
-      <div className="w-20 h-20 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center text-[10px] text-zinc-500 font-medium">
-        Empty
-      </div>
-    );
-  }
-
-  const circumference = 2 * Math.PI * 30; // ~188.496
-  let accumulatedPercent = 0;
-
-  return (
-    <div className="relative w-20 h-20 flex items-center justify-center group">
-      <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
-        {sortedVotes.map(([val, count], index) => {
-          const percent = count / total;
-          const strokeLength = percent * circumference;
-          const strokeOffset = -accumulatedPercent * circumference;
-          accumulatedPercent += percent;
-
-          const color = PALETTE[index % PALETTE.length];
-
-          return (
-            <circle
-              key={val}
-              cx="50"
-              cy="50"
-              r="30"
-              fill="none"
-              stroke={color}
-              strokeWidth="10"
-              strokeDasharray={`${strokeLength} ${circumference}`}
-              strokeDashoffset={strokeOffset}
-              className="transition-all duration-300 hover:stroke-[12] cursor-pointer"
-            >
-              <title>{`${val}: ${count} ${count === 1 ? 'vote' : 'votes'} (${Math.round(percent * 100)}%)`}</title>
-            </circle>
-          );
-        })}
-      </svg>
-      {/* Center Label */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
-        <span className="text-[10px] font-extrabold text-white leading-none">{total}</span>
-        <span className="text-[7px] text-zinc-500 uppercase tracking-widest mt-0.5">{total === 1 ? 'vote' : 'votes'}</span>
-      </div>
-    </div>
-  );
-};
+import { DonutChart, PALETTE } from '../features/room/components/DonutChart';
 
 export default function Room() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -365,7 +299,9 @@ export default function Room() {
   const onlineUsers = roomState.users.filter(u => u.isOnline);
   const onlineVotingUsers = roomState.users.filter(u => u.isOnline && !u.isSpectator);
 
-  const isSpectatorDisabled = Boolean(roomState?.tasks.some(task => 
+  const isTaskCompleted = Boolean(activeTask?.finalEstimate);
+
+  const isSpectatorDisabled = isTaskCompleted || Boolean(roomState?.tasks.some(task => 
     task.isRevealed && task.votes[currentUserId]
   ));
 
@@ -469,33 +405,6 @@ export default function Room() {
             </button>
           </div>
 
-          {/* Deck Selector (Owner Only) / Indicator (Non-Owners) */}
-          {roomState && (
-            isOwner ? (
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md">
-                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider select-none shrink-0">
-                  Deck
-                </span>
-                <select
-                  value={roomState.deckType || 'simplified'}
-                  onChange={(e) => wsService.changeDeck(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-white text-xs font-bold rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                >
-                  <option value="simplified">Simplified</option>
-                  <option value="standard">Standard</option>
-                  <option value="modified">Modified</option>
-                </select>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md text-xs font-semibold text-zinc-500">
-                <span className="uppercase tracking-wider select-none shrink-0">Deck:</span>
-                <span className="text-zinc-300 font-bold">
-                  {roomState.deckType === 'standard' ? 'Standard' : roomState.deckType === 'modified' ? 'Modified' : 'Simplified'}
-                </span>
-              </div>
-            )
-          )}
-
           {/* Auto-Reveal Switch (Owner Only) */}
           {isOwner && (
             <div className="flex items-center gap-2.5 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md">
@@ -505,11 +414,14 @@ export default function Room() {
               <button
                 role="switch"
                 aria-checked={autoReveal}
+                disabled={isTaskCompleted || isRevealed}
                 onClick={() => handleToggleAutoReveal(!autoReveal)}
                 className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isTaskCompleted || isRevealed ? 'opacity-40 cursor-not-allowed' : ''
+                } ${
                   autoReveal ? 'bg-indigo-600' : 'bg-zinc-700'
                 }`}
-                title="Automatically reveal cards when everyone has voted"
+                title={isTaskCompleted || isRevealed ? "Cannot change after cards are revealed" : "Automatically reveal cards when everyone has voted"}
               >
                 <span
                   className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${

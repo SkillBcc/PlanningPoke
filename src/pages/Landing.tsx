@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
-import { wsService } from '../services/WebSocketService';
+import { wsService } from '../core/services/WebSocketService';
 import { Github, Coffee } from 'lucide-react';
 
 import logoImage from '../assets/images/planning_poker_white_p_logo_1782837649464.jpg';
