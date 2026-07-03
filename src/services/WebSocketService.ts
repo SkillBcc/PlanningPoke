@@ -29,6 +29,7 @@ export interface RoomState {
   timerIsRunning: boolean;
   timerDuration: number;
   autoReveal: boolean;
+  deckType?: string;
 }
 
 class WebSocketService {
@@ -68,7 +69,7 @@ class WebSocketService {
     localStorage.setItem('poker_user_name', name);
   }
 
-  public connect(roomId: string, name: string, initialTask?: string) {
+  public connect(roomId: string, name: string, initialTask?: string, deckType?: string) {
     this.setUserName(name);
     
     let wsUrl: string;
@@ -89,7 +90,8 @@ class WebSocketService {
         payload: {
           roomId,
           user: { id: this.userId, name: this.userName },
-          initialTask
+          initialTask,
+          deckType
         }
       }));
     };
@@ -107,6 +109,15 @@ class WebSocketService {
       this.connectionStatus$.next(false);
       // Attempt reconnect logic could go here
     };
+  }
+
+  public changeDeck(deckType: string) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'CHANGE_DECK',
+        payload: { deckType }
+      }));
+    }
   }
 
   public disconnect() {

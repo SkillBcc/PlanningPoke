@@ -43,6 +43,7 @@ interface Room {
   timerIsRunning: boolean;
   timerDuration: number;
   autoReveal: boolean;
+  deckType?: string;
 }
 
 const rooms = new Map<string, Room>();
@@ -95,7 +96,7 @@ wss.on('connection', (ws) => {
       
       switch (data.type) {
         case 'JOIN_ROOM': {
-          const { roomId, user, initialTask } = data.payload;
+          const { roomId, user, initialTask, deckType } = data.payload;
           if (closedRooms.has(roomId)) {
             ws.send(JSON.stringify({ type: 'ROOM_CLOSED' }));
             break;
@@ -117,7 +118,8 @@ wss.on('connection', (ws) => {
               timerSeconds: 120,
               timerIsRunning: false,
               timerDuration: 120,
-              autoReveal: false
+              autoReveal: false,
+              deckType: deckType || 'simplified'
             });
           }
           const room = rooms.get(roomId)!;
@@ -283,6 +285,15 @@ wss.on('connection', (ws) => {
           }
           break;
         }
+        case 'CHANGE_DECK': {
+          if (!currentUser) return;
+          const room = rooms.get(currentUser.roomId);
+          if (room && room.ownerId === currentUser.userId) {
+            room.deckType = data.payload.deckType;
+            broadcastRoomState(room.id);
+          }
+          break;
+        }
         case 'DELETE_TASK': {
           if (!currentUser) return;
           const room = rooms.get(currentUser.roomId);
@@ -388,6 +399,7 @@ function broadcastRoomState(roomId: string) {
     timerIsRunning: room.timerIsRunning,
     timerDuration: room.timerDuration,
     autoReveal: room.autoReveal,
+    deckType: room.deckType || 'simplified',
     // Provide a snapshot of users with their voting status for the active task
     users: room.users.map(u => {
       const voteInfo = activeTask ? activeTask.votes[u.id] : null;

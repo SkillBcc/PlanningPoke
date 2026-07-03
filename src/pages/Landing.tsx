@@ -11,6 +11,7 @@ export default function Landing() {
   const [name, setName] = useState(wsService.getUserName() || '');
   const [roomId, setRoomId] = useState('');
   const [initialTask, setInitialTask] = useState('');
+  const [deckType, setDeckType] = useState('simplified');
   const [nameError, setNameError] = useState(false);
 
   const handleCreateRoom = (e: React.FormEvent) => {
@@ -24,7 +25,7 @@ export default function Landing() {
     if (!initialTask.trim()) return;
     wsService.setUserName(name);
     const newRoomId = uuidv4().substring(0, 8);
-    navigate(`/room/${newRoomId}`, { state: { initialTask: initialTask.trim() } });
+    navigate(`/room/${newRoomId}`, { state: { initialTask: initialTask.trim(), deckType } });
   };
 
   const handleJoinRoom = (e: React.FormEvent) => {
@@ -90,6 +91,18 @@ export default function Landing() {
                 className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                 placeholder="e.g. US-101: Login Page"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">Deck Option</label>
+              <select
+                value={deckType}
+                onChange={(e) => setDeckType(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer text-sm"
+              >
+                <option value="simplified">0, 1, 2, 3, 5, 8, 13, ?</option>
+                <option value="standard">0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, ?</option>
+                <option value="modified">0, 1/2, 1, 2, 3, 5, 8, 13, 20, 40, 100, ?</option>
+              </select>
             </div>
             <button
               type="submit"

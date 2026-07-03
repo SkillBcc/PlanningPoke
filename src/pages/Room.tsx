@@ -4,7 +4,11 @@ import { wsService, RoomState } from '../services/WebSocketService';
 import { Copy, LogOut, Trash2, Plus, Edit2, Check, CheckCircle2, ChevronDown, ChevronRight, Eye, EyeOff, AlertTriangle, X, Timer, Play, Pause, RotateCcw } from 'lucide-react';
 import logoImage from '../assets/images/planning_poker_white_p_logo_1782837649464.jpg';
 
-const DECK = ['0', '1', '2', '3', '5', '8', '13', '?'];
+const DECKS: Record<string, string[]> = {
+  simplified: ['0', '1', '2', '3', '5', '8', '13', '?'],
+  standard: ['0', '1', '2', '3', '5', '8', '13', '21', '34', '55', '89', '144', '?'],
+  modified: ['0', '1/2', '1', '2', '3', '5', '8', '13', '20', '40', '100', '?']
+};
 
 const PALETTE = [
   '#818cf8', // Matte Indigo
@@ -99,6 +103,8 @@ export default function Room() {
   const activeTask = roomState?.tasks?.find(t => t.id === roomState.activeTaskId);
   const isRevealed = activeTask?.isRevealed ?? false;
   const isOwner = roomState?.ownerId === currentUserId;
+  const deckType = roomState?.deckType || 'simplified';
+  const currentDeck = DECKS[deckType] || DECKS.simplified;
 
   const autoReveal = roomState?.autoReveal ?? false;
 
@@ -140,7 +146,8 @@ export default function Room() {
     if (!userName) return;
 
     const initialTask = location.state?.initialTask;
-    wsService.connect(roomId, userName, initialTask);
+    const initialDeckType = location.state?.deckType || 'simplified';
+    wsService.connect(roomId, userName, initialTask, initialDeckType);
 
     const roomSub = wsService.roomState$.subscribe(state => {
       setRoomState(state);
@@ -197,9 +204,9 @@ export default function Room() {
         if (numericVotes.length > 0) {
           const sum = numericVotes.reduce((a, b) => a + b, 0);
           const avg = sum / numericVotes.length;
-          let closest = DECK[0];
+          let closest = currentDeck[0];
           let minDiff = Infinity;
-          DECK.forEach(card => {
+          currentDeck.forEach(card => {
             const num = Number(card);
             if (!isNaN(num)) {
               const diff = Math.abs(num - avg);
@@ -461,6 +468,33 @@ export default function Room() {
               />
             </button>
           </div>
+
+          {/* Deck Selector (Owner Only) / Indicator (Non-Owners) */}
+          {roomState && (
+            isOwner ? (
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md">
+                <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider select-none shrink-0">
+                  Deck
+                </span>
+                <select
+                  value={roomState.deckType || 'simplified'}
+                  onChange={(e) => wsService.changeDeck(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 text-white text-xs font-bold rounded px-1.5 py-0.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  <option value="simplified">Simplified</option>
+                  <option value="standard">Standard</option>
+                  <option value="modified">Modified</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-md text-xs font-semibold text-zinc-500">
+                <span className="uppercase tracking-wider select-none shrink-0">Deck:</span>
+                <span className="text-zinc-300 font-bold">
+                  {roomState.deckType === 'standard' ? 'Standard' : roomState.deckType === 'modified' ? 'Modified' : 'Simplified'}
+                </span>
+              </div>
+            )
+          )}
 
           {/* Auto-Reveal Switch (Owner Only) */}
           {isOwner && (
@@ -974,7 +1008,7 @@ export default function Room() {
                         className="bg-zinc-950 border border-zinc-800 text-white text-xs font-bold rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500 cursor-pointer"
                       >
                         <option value="" disabled>Select...</option>
-                        {DECK.map(v => (
+                        {currentDeck.map(v => (
                           <option key={v} value={v}>{v}</option>
                         ))}
                       </select>
@@ -1065,7 +1099,7 @@ export default function Room() {
                   <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Choose your estimate</span>
                 </div>
                 <div className="flex gap-3">
-                  {DECK.map(v => {
+                  {currentDeck.map(v => {
                     const isSelected = currentUser?.vote === v;
                     return (
                       <button
